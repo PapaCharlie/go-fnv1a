@@ -1,187 +1,232 @@
 package fnv1a
 
 import (
+	"fmt"
 	"math"
+	"sort"
 )
 
 const (
-	zeroHash   = Hash(2166136261)
-	multiplier = 16777619
-	mask       = Hash(0xFF)
+	initialHash = hash(2166136261)
+	multiplier  = 16777619
+	mask        = hash(0xFF)
 )
 
-// NewHash initializes a new Hash (it is not recommended to use the zero value of the Hash)
+func ZeroHash() Hash {
+	return new(hash)
+}
+
 func NewHash() Hash {
-	return zeroHash
+	h := initialHash
+	return &h
+}
+
+type Hashable interface {
+	ComputeHash() Hash
 }
 
 // Hash provides the set of functions needed to compute a running fnv1a of the supported rest.li primitives
-type Hash uint32
+type Hash interface {
+	fmt.Stringer
+	AddInt32(v int32)
+	AddInt64(v int64)
+	AddFloat32(v float32)
+	AddFloat64(v float64)
+	AddBool(v bool)
+	AddString(v string)
+	AddBytes(v []byte)
+	Add(other Hash)
+	Equals(other Hash) bool
+	MapKey() HashMapKey
 
-func (h *Hash) addUint32(v uint32) {
-	hash := *h
-	hash ^= Hash(v) & mask
-	hash *= multiplier
-	hash ^= Hash(v>>8) & mask
-	hash *= multiplier
-	hash ^= Hash(v>>16) & mask
-	hash *= multiplier
-	hash ^= Hash(v>>24) & mask
-	hash *= multiplier
-	*h = hash
+	add(other hash)
+	underlying() hash
 }
 
-func (h *Hash) addUint64(v uint64) {
-	hash := *h
-	hash ^= Hash(v) & mask
-	hash *= multiplier
-	hash ^= Hash(v>>8) & mask
-	hash *= multiplier
-	hash ^= Hash(v>>16) & mask
-	hash *= multiplier
-	hash ^= Hash(v>>24) & mask
-	hash *= multiplier
-	hash ^= Hash(v>>32) & mask
-	hash *= multiplier
-	hash ^= Hash(v>>40) & mask
-	hash *= multiplier
-	hash ^= Hash(v>>48) & mask
-	hash *= multiplier
-	hash ^= Hash(v>>56) & mask
-	hash *= multiplier
-	*h = hash
+type (
+	HashMapKey uint32
+	hash       HashMapKey
+)
+
+func (h *hash) String() string {
+	return fmt.Sprintf("%x", uint32(*h))
 }
 
-// AddByte increments the current hasher with the given byte
-func (h *Hash) AddByte(v byte) {
-	hash := *h
-	hash ^= Hash(v)
-	hash *= multiplier
-	*h = hash
+func (h *hash) addUint32(v uint32) {
+	hV := *h
+	hV ^= hash(v) & mask
+	hV *= multiplier
+	hV ^= hash(v>>8) & mask
+	hV *= multiplier
+	hV ^= hash(v>>16) & mask
+	hV *= multiplier
+	hV ^= hash(v>>24) & mask
+	hV *= multiplier
+	*h = hV
 }
 
-// AddInt16 increments the current hasher with the given int16
-func (h *Hash) AddInt16(v int16) {
-	hash := *h
-	hash ^= Hash(v) & mask
-	hash *= multiplier
-	hash ^= Hash(v>>8) & mask
-	hash *= multiplier
-	*h = hash
+func (h *hash) addUint64(v uint64) {
+	hV := *h
+	hV ^= hash(v) & mask
+	hV *= multiplier
+	hV ^= hash(v>>8) & mask
+	hV *= multiplier
+	hV ^= hash(v>>16) & mask
+	hV *= multiplier
+	hV ^= hash(v>>24) & mask
+	hV *= multiplier
+	hV ^= hash(v>>32) & mask
+	hV *= multiplier
+	hV ^= hash(v>>40) & mask
+	hV *= multiplier
+	hV ^= hash(v>>48) & mask
+	hV *= multiplier
+	hV ^= hash(v>>56) & mask
+	hV *= multiplier
+	*h = hV
 }
 
-// AddInt32 increments the current hasher with the given int32
-func (h *Hash) AddInt32(v int32) {
+func (h *hash) AddInt32(v int32) {
 	h.addUint32(uint32(v))
 }
 
-// AddInt64 increments the current hasher with the given int64
-func (h *Hash) AddInt64(v int64) {
+func (h *hash) AddInt64(v int64) {
 	h.addUint64(uint64(v))
 }
 
-// AddFloat32 increments the current hasher with the given float32
-func (h *Hash) AddFloat32(v float32) {
+func (h *hash) AddFloat32(v float32) {
 	h.addUint32(math.Float32bits(v))
 }
 
-// AddFloat64 increments the current hasher with the given float64
-func (h *Hash) AddFloat64(v float64) {
+func (h *hash) AddFloat64(v float64) {
 	h.addUint64(math.Float64bits(v))
 }
 
-// AddBool increments the current hasher with the given bool
-func (h *Hash) AddBool(v bool) {
-	hash := *h
-	var b Hash
+func (h *hash) AddBool(v bool) {
+	hV := *h
+	var b hash
 	if v {
 		b = 1
 	} else {
 		b = 0
 	}
-	hash ^= b
-	hash *= multiplier
-	*h = hash
+	hV ^= b
+	hV *= multiplier
+	*h = hV
 }
 
-// AddString increments the current hasher with the given string
-func (h *Hash) AddString(v string) {
+func (h *hash) AddString(v string) {
 	h.AddBytes([]byte(v))
 }
 
-// AddBytes increments the current hasher with the given byte slice
-func (h *Hash) AddBytes(v []byte) {
-	hash := *h
+func (h *hash) AddBytes(v []byte) {
+	hV := *h
 	for _, b := range v {
-		h.AddByte(b)
+		hV ^= hash(b)
+		hV *= multiplier
 	}
-	*h = hash
+	*h = hV
 }
 
-// Add increments the current hasher with the value of another hasher
-func (h *Hash) Add(other Hash) {
+func (h *hash) Add(other Hash) {
+	h.add(other.underlying())
+}
+
+func (h *hash) Equals(other Hash) bool {
+	return *h == other.underlying()
+}
+
+func (h *hash) MapKey() HashMapKey {
+	return HashMapKey(*h)
+}
+
+func (h *hash) add(other hash) {
 	h.addUint32(uint32(other))
 }
 
-// HashByte initializes a Hash with the given byte
-func HashByte(v byte) Hash {
-	h := NewHash()
-	h.AddByte(v)
-	return h
+func (h *hash) underlying() hash {
+	return *h
 }
 
-// HashInt16 initializes a Hash with the given int16
-func HashInt16(v int16) Hash {
-	h := NewHash()
-	h.AddInt16(v)
-	return h
+func AddArray[T any](h Hash, elements []T, hasher func(Hash, T)) {
+	for _, e := range elements {
+		hasher(h, e)
+	}
 }
 
-// Hash HashInt32 initializes a Hash with the given int32
+func AddHashableArray[T Hashable](h Hash, elements []T) {
+	AddArray(h, elements, func(hash Hash, t T) {
+		hash.Add(t.ComputeHash())
+	})
+}
+
+func AddMap[T any](h Hash, elements map[string]T, hasher func(Hash, T)) {
+	kvHashes := make([]hash, len(elements))
+	i := 0
+	for k, v := range elements {
+		kvHash := &kvHashes[i]
+		i++
+
+		kvHash.AddString(k)
+		hasher(kvHash, v)
+	}
+
+	// Because order matters when hashing, the kvHashes are computed separately and inserted in ascending order. Two
+	// identical maps will produce the same kvHashes and therefore add them to the total hash in the same order, meaning
+	// they will hash to the same value.
+	sort.Slice(kvHashes, func(i, j int) bool {
+		return kvHashes[i] < kvHashes[j]
+	})
+
+	for _, kvHash := range kvHashes {
+		h.add(kvHash.underlying())
+	}
+}
+
+func AddHashableMap[T Hashable](h Hash, elements map[string]T) {
+	AddMap(h, elements, func(hash Hash, t T) {
+		hash.Add(t.ComputeHash())
+	})
+}
+
 func HashInt32(v int32) Hash {
-	h := NewHash()
+	h := initialHash
 	h.AddInt32(v)
-	return h
+	return &h
 }
 
-// Hash HashInt64 initializes a Hash with the given int64
 func HashInt64(v int64) Hash {
-	h := NewHash()
+	h := initialHash
 	h.AddInt64(v)
-	return h
+	return &h
 }
 
-// HashFloat32 initializes a Hash with the given float32
 func HashFloat32(v float32) Hash {
-	h := NewHash()
+	h := initialHash
 	h.AddFloat32(v)
-	return h
+	return &h
 }
 
-// HashFloat64 initializes a Hash with the given float64
 func HashFloat64(v float64) Hash {
-	h := NewHash()
+	h := initialHash
 	h.AddFloat64(v)
-	return h
+	return &h
 }
 
-// HashBool initializes a Hash with the given bool
 func HashBool(v bool) Hash {
-	h := NewHash()
+	h := initialHash
 	h.AddBool(v)
-	return h
+	return &h
 }
 
-// HashString initializes a Hash with the given string
 func HashString(v string) Hash {
-	h := NewHash()
+	h := initialHash
 	h.AddString(v)
-	return h
+	return &h
 }
 
-// HashBytes initializes a Hash with the given bytes
 func HashBytes(v []byte) Hash {
-	h := NewHash()
+	h := initialHash
 	h.AddBytes(v)
-	return h
+	return &h
 }
